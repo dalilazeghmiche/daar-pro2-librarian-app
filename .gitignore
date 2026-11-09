@@ -1,0 +1,19 @@
+# Donnees generees : trop grosses pour GitHub, reconstruites avec les scripts (voir README.md)
+books/
+index/
+doublons/
+jaccard/
+clics.csv
+
+# Compilation du serveur
+serveur/build/
+serveur/sources.txt
+*.class
+
+# Fichiers systeme / editeurs
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.iml
