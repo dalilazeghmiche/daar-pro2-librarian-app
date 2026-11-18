@@ -37,14 +37,27 @@ public class Moteur {
     public static final List<String> TRIS = List.of("pertinence", "occurrences", "frequence", "closeness", "betweenness", "pagerank", "clics");
 
     /** Un livre trouve, avec son score pour la requete. */
-    public record Resultat(Bibliotheque.Livre livre, long occurrences) {}
+    public record Resultat(Bibliotheque.Livre livre, long occurrences, List<Proche> proches) {
+        public Resultat(Bibliotheque.Livre livre, long occurrences) { this(livre, occurrences, new ArrayList<>()); }
+    }
+
+    /** Livre presque identique a un resultat (autre edition, doublon partiel) : affiche sous ce resultat. */
+    public record Proche(Bibliotheque.Livre livre, long occurrences, double distance) {}
+
+    /**
+     * Seuil de regroupement : deux livres a distance de Jaccard < 0,25 sont consideres comme des editions
+     * d'un meme ouvrage (mesure : CIA World Factbook d'annees successives 0,12-0,18 ; editions d'une meme piece
+     * de Shakespeare 0,07-0,20 ; alors que deux livres differents du meme auteur sur le meme sujet,
+     * ex. Babylone vol. 1 et 2, sont a 0,575).
+     */
+    public static final double SEUIL_REGROUPEMENT = 0.25;
 
     /** Un livre suggere : voisin de quels livres les plus pertinents, et a quelle distance (la plus petite). */
     public record Suggestion(Bibliotheque.Livre livre, List<Integer> voisinDe, double distance) {}
 
     /** Reponse complete a une recherche. */
     public record Reponse(String requete, String type, List<String> motsReconnus, int nbMotsReconnus,
-                          List<Resultat> resultats, int nbResultats, List<Suggestion> suggestions,
+                          List<Resultat> resultats, int nbResultats, int nbLivres, List<Suggestion> suggestions,
                           String moteur, double tempsMs) {}
 
     private final Bibliotheque bib;
@@ -181,12 +194,54 @@ public class Moteur {
             if (lv != null) res.add(new Resultat(lv, e.getValue()));
         }
         res.sort(comparateur(tri));
+        int nbLivres = res.size();
+        res = regrouper(res);
         List<Suggestion> sugg = suggerer(res, 3, 10);
         int nb = res.size();
         List<Resultat> page = res.subList(0, Math.min(limite, nb));
         double ms = (System.nanoTime() - t0) / 1e6;
         List<String> motsAffiches = mots.subList(0, Math.min(50, mots.size()));
-        return new Reponse(requete, type, motsAffiches, mots.size(), new ArrayList<>(page), nb, sugg, moteur, ms);
+        return new Reponse(requete, type, motsAffiches, mots.size(), new ArrayList<>(page), nb, nbLivres, sugg, moteur, ms);
+    }
+
+    /** Distance de Jaccard entre deux livres si elle est < seuil (arete du graphe), sinon -1. */
+    private double distanceSiProche(int a, int b) {
+        for (Bibliotheque.Voisin v : bib.voisins(a)) {
+            if (v.distance() >= SEUIL_REGROUPEMENT) break;          // voisins tries par distance croissante
+            if (v.id() == b) return v.distance();
+        }
+        return -1;
+    }
+
+    /**
+     * Regroupement des quasi-doublons : on parcourt les resultats dans l'ordre du classement ; un livre a
+     * distance < SEUIL_REGROUPEMENT d'un livre deja place plus haut (affiche ou deja regroupe) n'est pas affiche
+     * a part, il est rattache au meme resultat ("+ n editions tres proches"). Cout : O(r x d), d = nombre de voisins tres proches (quelques-uns).
+     */
+    List<Resultat> regrouper(List<Resultat> tries) {
+        // groupe : id de CHAQUE livre deja place (tete ou edition regroupee) -> resultat affiche (tete du groupe).
+        // Un livre rejoint un groupe s'il est tres proche de N'IMPORTE QUEL livre du groupe (lien simple,
+        // "de proche en proche") : Factbook 1990 ~ 1991 ~ 1992 ~ 1993... forment un seul groupe meme si
+        // 1990 et 1995 sont plus eloignes que le seuil.
+        Map<Integer, Resultat> groupe = new HashMap<>();
+        List<Resultat> res = new ArrayList<>();
+        for (Resultat r : tries) {
+            Resultat tete = null;
+            double dMin = Double.MAX_VALUE;
+            for (Bibliotheque.Voisin v : bib.voisins(r.livre().id)) {
+                if (v.distance() >= SEUIL_REGROUPEMENT) break;          // voisins tries par distance croissante
+                Resultat t = groupe.get(v.id());
+                if (t != null && v.distance() < dMin) { tete = t; dMin = v.distance(); }
+            }
+            if (tete != null) {
+                tete.proches().add(new Proche(r.livre(), r.occurrences(), dMin));
+                groupe.put(r.livre().id, tete);
+            } else {
+                groupe.put(r.livre().id, r);
+                res.add(r);
+            }
+        }
+        return res;
     }
 
     /** Toute la bibliotheque classee selon un critere (page d'accueil : livres les plus centraux, les plus lus...). */
@@ -237,12 +292,17 @@ public class Moteur {
      */
     public List<Suggestion> suggerer(List<Resultat> resultats, int graines, int combien) {
         List<Integer> top = new ArrayList<>();
-        for (int i = 0; i < Math.min(graines, resultats.size()); i++) top.add(resultats.get(i).livre().id);
+        java.util.Set<Integer> exclus = new java.util.HashSet<>();
+        for (int i = 0; i < Math.min(graines, resultats.size()); i++) {
+            top.add(resultats.get(i).livre().id);
+            exclus.add(resultats.get(i).livre().id);
+            for (Proche p : resultats.get(i).proches()) exclus.add(p.livre().id);   // editions deja affichees
+        }
         Map<Integer, List<Integer>> lienAvec = new LinkedHashMap<>();
         Map<Integer, Double> meilleureDistance = new HashMap<>();
         for (int g : top)
             for (Bibliotheque.Voisin v : bib.voisins(g)) {
-                if (top.contains(v.id())) continue;
+                if (exclus.contains(v.id())) continue;
                 lienAvec.computeIfAbsent(v.id(), k -> new ArrayList<>()).add(g);
                 meilleureDistance.merge(v.id(), v.distance(), Math::min);
             }
@@ -260,7 +320,7 @@ public class Moteur {
         // places apres les voisins directs. "voisinDe" donne alors le voisin direct par lequel on passe.
         if (s.size() < combien) {
             List<Suggestion> niveau2 = new ArrayList<>();
-            java.util.Set<Integer> deja = new java.util.HashSet<>(top);
+            java.util.Set<Integer> deja = new java.util.HashSet<>(exclus);
             for (Suggestion x : s) deja.add(x.livre().id);
             for (Suggestion x : new ArrayList<>(s))
                 for (Bibliotheque.Voisin v : bib.voisins(x.livre().id))
@@ -269,6 +329,14 @@ public class Moteur {
             niveau2.sort(ordre);
             s.addAll(niveau2);
         }
-        return new ArrayList<>(s.subList(0, Math.min(combien, s.size())));
+        // pas deux suggestions quasi identiques (ex. plusieurs editions du CIA World Factbook)
+        List<Suggestion> variees = new ArrayList<>();
+        for (Suggestion x : s) {
+            boolean doublon = false;
+            for (Suggestion y : variees) if (distanceSiProche(x.livre().id, y.livre().id) >= 0) { doublon = true; break; }
+            if (!doublon) variees.add(x);
+            if (variees.size() == combien) break;
+        }
+        return variees;
     }
 }

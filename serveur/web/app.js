@@ -89,6 +89,11 @@ const CarteLivre = {
           <span v-if="livre.clics" :class="{ on: tri === 'clics' }">{{ livre.clics }} consultation(s)</span>
         </div>
         <div v-if="via" class="via">{{ via }}</div>
+        <div v-if="livre.proches && livre.proches.length" class="via">
+          + {{ livre.proches.length }} édition{{ livre.proches.length > 1 ? 's' : '' }} très proche{{ livre.proches.length > 1 ? 's' : '' }}
+          (regroupée{{ livre.proches.length > 1 ? 's' : '' }}) :
+          {{ livre.proches.slice(0, 3).map(p => p.titre).join(' ; ') }}{{ livre.proches.length > 3 ? ' ; …' : '' }}
+        </div>
       </div>
       <div v-if="!compact && livre.occurrences != null" class="rang"><b>{{ fmt(livre.occurrences) }}</b>occurrence{{ livre.occurrences > 1 ? 's' : '' }}</div>
     </a>`,
@@ -145,6 +150,8 @@ const VueRecherche = {
     function exemple(q, t) { saisie.value = q; type.value = t; lancer(); }
     function lienLivre(id) { return lien('/livre/' + id, { q: props.params.q, type: props.params.type }); }
     function changerTri() { if (props.params.q) lancer(); }
+    // changer de type relance la recherche en cours (sinon l'onglet ne correspond plus aux résultats affichés)
+    function choisirType(t) { type.value = t; if (props.params.q && saisie.value.trim()) lancer(); }
 
     watch(() => props.params, p => {
       saisie.value = p.q || ''; type.value = p.type || 'motcle'; tri.value = p.tri || 'pertinence';
@@ -153,7 +160,7 @@ const VueRecherche = {
     onMounted(charger);
 
     return { saisie, type, tri, rep, erreur, charge, accueil, estRegex, aide, titres, TYPES, TRIS,
-             lancer, plus, exemple, lienLivre, changerTri, fmt };
+             lancer, plus, exemple, lienLivre, changerTri, choisirType, fmt };
   },
   template: `
     <form class="recherche" role="search" @submit.prevent="lancer">
@@ -165,7 +172,7 @@ const VueRecherche = {
       <div class="options">
         <div class="segments" role="radiogroup" aria-label="Type de recherche">
           <button v-for="t in TYPES" :key="t.id" type="button" :class="{ actif: type === t.id }"
-                  role="radio" :aria-checked="type === t.id" @click="type = t.id">{{ t.nom }}</button>
+                  role="radio" :aria-checked="type === t.id" @click="choisirType(t.id)">{{ t.nom }}</button>
         </div>
         <label>Classer par
           <select v-model="tri" @change="changerTri">
@@ -181,10 +188,11 @@ const VueRecherche = {
 
     <template v-else-if="rep">
       <p class="etat">
-        <strong>{{ fmt(rep.nbResultats) }}</strong> livre{{ rep.nbResultats > 1 ? 's' : '' }}
+        <strong>{{ fmt(rep.nbLivres) }}</strong> livre{{ rep.nbLivres > 1 ? 's' : '' }}
+        <template v-if="rep.nbResultats < rep.nbLivres">({{ fmt(rep.nbResultats) }} après regroupement des éditions très proches)</template>
         · {{ rep.tempsMs.toLocaleString('fr-FR') }} ms · {{ rep.moteur }}
       </p>
-      <div v-if="rep.nbMotsReconnus > 1 || (type === 'regex' && rep.nbMotsReconnus)" class="mots">
+      <div v-if="rep.nbMotsReconnus > 1 || (params.type === 'regex' && rep.nbMotsReconnus)" class="mots">
         <span class="etat" style="margin:0">{{ fmt(rep.nbMotsReconnus) }} mot(s) reconnu(s) :</span>
         <a v-for="m in rep.motsReconnus" :key="m" class="puce" :href="'#/?q=' + m + '&type=motcle'">{{ m }}</a>
         <span v-if="rep.nbMotsReconnus > rep.motsReconnus.length" class="puce">…</span>

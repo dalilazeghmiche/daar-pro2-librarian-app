@@ -143,10 +143,14 @@ public class Serveur {
                 .cle("nbMotsReconnus").val(r.nbMotsReconnus())
                 .cle("motsReconnus").tableau();
         for (String m : r.motsReconnus()) j.val(m);
-        j.fin().cle("nbResultats").val(r.nbResultats()).cle("resultats").tableau();
+        j.fin().cle("nbResultats").val(r.nbResultats()).cle("nbLivres").val(r.nbLivres()).cle("resultats").tableau();
         for (Moteur.Resultat res : r.resultats()) {
             livre(j, res.livre());
-            j.cle("occurrences").val(res.occurrences()).fin();
+            j.cle("occurrences").val(res.occurrences()).cle("proches").tableau();
+            for (Moteur.Proche p : res.proches())
+                j.objet().cle("id").val(p.livre().id).cle("titre").val(p.livre().titre)
+                        .cle("occurrences").val(p.occurrences()).cle("distance").val(p.distance()).fin();
+            j.fin().fin();
         }
         j.fin().cle("suggestions").tableau();
         for (Moteur.Suggestion s : r.suggestions()) {

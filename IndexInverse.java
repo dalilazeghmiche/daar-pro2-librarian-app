@@ -126,14 +126,28 @@ public class IndexInverse {
         System.out.printf("Index inverse construit en %.1f s : %d livres, %d mots distincts, %d entrees (mot, livre), ~%d Mo%n",
                 sec, idx.nbLivres(), idx.nbMots(), idx.nbEntrees(), memo);
 
-        String[] mots = args.length > 2 ? Arrays.copyOfRange(args, 2, args.length) : new String[]{"babylon", "sargon", "elizabeth"};
-        for (String mot : mots) {
-            long t1 = System.nanoTime();
-            int[] res = idx.chercher(mot);
-            double us = (System.nanoTime() - t1) / 1e3;
-            System.out.printf("%n\"%s\" : %d livres (recherche en %.0f microsecondes)%n", mot, res.length / 2, us);
-            for (int i = 0; i < Math.min(5, res.length / 2); i++)
-                System.out.printf("   %6d  %5d fois  %s%n", res[2 * i], res[2 * i + 1], titres.getOrDefault(res[2 * i], ""));
+        if (args.length > 2) {                       // mots donnes sur la ligne de commande
+            for (String mot : Arrays.copyOfRange(args, 2, args.length)) afficher(idx, mot, titres);
+            return;
         }
+        // sinon : mode interactif, on tape des mots au clavier
+        System.out.println("\nTapez un mot puis Entree (ligne vide pour quitter).");
+        BufferedReader clavier = new BufferedReader(new java.io.InputStreamReader(System.in));
+        String mot;
+        while (true) {
+            System.out.print("> ");
+            mot = clavier.readLine();
+            if (mot == null || mot.isBlank()) break;
+            afficher(idx, mot.trim(), titres);
+        }
+    }
+
+    static void afficher(IndexInverse idx, String mot, Map<Integer, String> titres) {
+        long t1 = System.nanoTime();
+        int[] res = idx.chercher(mot);
+        double us = (System.nanoTime() - t1) / 1e3;
+        System.out.printf("\"%s\" : %d livres (recherche en %.0f microsecondes)%n", mot, res.length / 2, us);
+        for (int i = 0; i < Math.min(10, res.length / 2); i++)
+            System.out.printf("   %6d  %5d fois  %s%n", res[2 * i], res[2 * i + 1], titres.getOrDefault(res[2 * i], ""));
     }
 }

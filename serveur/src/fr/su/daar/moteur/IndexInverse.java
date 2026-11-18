@@ -49,6 +49,11 @@ public class IndexInverse {
         try (Stream<Path> s = Files.list(dossierIndex)) {
             fichiers = s.filter(p -> p.getFileName().toString().matches("\\d+\\.idx")).sorted().toList();
         }
+        return charger(fichiers);
+    }
+
+    /** Construit l'index inverse a partir d'une liste de fichiers <id>.idx (utilise aussi par les tests de performance). */
+    public static IndexInverse charger(List<Path> fichiers) throws IOException {
         // 1re passe : on accumule les (id, k) de chaque mot dans des listes extensibles
         Map<String, IntListe> tmp = new HashMap<>(1 << 20);
         for (Path f : fichiers) {
